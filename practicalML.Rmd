@@ -2,7 +2,9 @@
 title: "The right way and the wrong way to exercise"
 author: "Paul W"
 date: "25 July 2015"
-output: html_document
+output: 
+  html_document: 
+    self_contained: no
 ---
 
 Six participants were asked to perform a series of simple exercises (lifting a dumbbell) in five different ways, labelled A-E. One of these techniques was the "correct" way of lifting, the remaining four ways were representative of common mistakes. Sensors (gyroscope, accelerometer, magnetometer) in the participants' dumbbell, glove, forearm and belt recorded various quantities (roll, pitch, yaw, amplitude, acceleration, kurtosis, skewness) during each set of manouevres. Given these data, is it possible to train a model to recognise which movements are correct, and which are incorrect?
