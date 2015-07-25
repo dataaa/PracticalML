@@ -1,0 +1,81 @@
+---
+title: "The right way and the wrong way to exercise"
+author: "Paul W"
+date: "25 July 2015"
+output: html_document
+---
+
+Six participants were asked to perform a series of simple exercises (lifting a dumbbell) in five different ways, labelled A-E. One of these techniques was the "correct" way of lifting, the remaining four ways were representative of common mistakes. Sensors (gyroscope, accelerometer, magnetometer) in the participants' dumbbell, glove, forearm and belt recorded various quantities (roll, pitch, yaw, amplitude, acceleration, kurtosis, skewness) during each set of manouevres. Given these data, is it possible to train a model to recognise which movements are correct, and which are incorrect?
+
+A training dataset was provided, containing 19,622 observations of 124 features. Many of these features showed little or no variance over the course of the test, and so were removed from the dataset. Similarly many features were not recorded (NAs), and were also removed.
+
+```{r, message=FALSE, warning=FALSE}
+setwd('.')
+library(caret); library(doParallel); library(randomForest)
+# Read the provided training and test sets
+training <- read.csv('pml-training.csv',na.strings=c("","NA","NaN","#DIV/0!"),stringsAsFactors = FALSE)
+testing <- read.csv('pml-testing.csv',na.strings=c("","NA","NaN","#DIV/0!"),stringsAsFactors = FALSE)
+# Remove variables with near-zero variance, which are unlikely to contribute much to the model
+nzv<-nearZeroVar(training)
+training<-training[, -nzv]
+testing<-testing[, -nzv]
+# Strip out the unmeasured variables, keeping the good data
+goodTrain <- training[,c(7:10,33:45,47:55,66:68,81,92:103,113,115:124)]
+goodTest <- testing[,c(7:10,33:45,47:55,66:68,81,92:103,113,115:124)]
+# 'classe' is the labeling of the movements (the outcome we are trying to predict). Make this a factor with levels A, B, C, D, E.
+goodTrain$classe <- as.factor(goodTrain$classe)
+```
+
+Since the test dataset does not contain any classifications, the training set was partitioned in order to provide a validation set on which to test the model.
+
+```{r}
+dpIndex <- createDataPartition(y=goodTrain$classe, p=0.70, list=FALSE )
+trainPart <- goodTrain[dpIndex,]
+validPart <- goodTrain[-dpIndex,]
+```
+
+Exploring the data a little, it seemed clear that since many measurements are clustered when segmented by `classe`, some kind of hierarchical tree method (e.g., Random Forest) would be appropriate.
+
+```{r}
+names(trainPart)
+featurePlot(x=trainPart[,c("roll_dumbbell","pitch_dumbbell","yaw_dumbbell","total_accel_dumbbell")],y=trainPart$classe,plot="pairs")
+```
+
+Using a Random Forest classification model, we can fit `classe` as a function of all the other variables. Performing the fitting in parallel helps to speed up the process. Fitting with 200+ trees, multiple times, produces an accuracy of 99+%:
+
+```{r}
+registerDoParallel(2, cores=2)
+
+rf <- foreach(ntree=rep(300, 3), .combine=randomForest::combine, .packages='randomForest') %dopar% {
+  randomForest(trainPart[,c(1:ncol(trainPart)-1)], trainPart$classe, ntree=ntree) 
+}
+predForValid <- predict(rf, newdata=validPart)
+confusionMatrix(predForValid,validPart$classe)
+```
+
+The confusion matrix tells us that the out-of-sample error rate is 31/6885, or 0.5%. Having fitted a model, we can identify the most significant variables:
+
+```{r}
+varImpForModel <- varImp(rf)
+par(mar=c(5,9,4,2)+0.1)
+barplot(varImpForModel[order(varImpForModel[1],decreasing = TRUE)[20:1],1], main = "Variable importance",horiz=TRUE,names.arg=rownames(varImpForModel)[order(varImpForModel[1],decreasing = TRUE)[20:1]],las=1)
+```
+
+We can now apply the model to the testing data that was witheld until now:
+
+```{r}
+predForTest <- predict(rf, newdata=goodTest)
+predForTest
+```
+
+```{r, echo=FALSE}
+ pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+ 
+pml_write_files(predForTest)
+```
